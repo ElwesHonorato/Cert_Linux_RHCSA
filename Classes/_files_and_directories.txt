@@ -1,0 +1,252 @@
+#### Mount Local Storage
+
+    Partition
+        A partition is a virtual division of a hard disk drive (HDD) or solid state drive (SSD). 
+        Each partition can vary in size and typically serves a different function.
+        In Linux, there's typically:
+            root - (/)
+            swap - which helps with memory managemen
+            large /home partition. The /home partition is similar to the C: partition in Windows in that it's where you install most of your programs and store files.
+
+        MBR and GPT
+            Before a drive can be divided into individual partitions, it needs to be configured to use a specific partition scheme or table
+            MBR - Master Boot Record
+                It is a bit of reserved space at the beginning of the drive that contains the information about how the partitions are organized. 
+                The MBR also contains code to launch the operating system, and it's sometimes called the Boot Loader.
+                - Up to 4 partitions
+                - One partition can be exteded up to 15 partitions
+                - Up to 2TB per partition
+                - Old Microsoft Standard
+            GPT - GUID Partition Table
+                It is a newer standard that's slowly replacing MBR.
+                Unlike an MBR partition table, GPT stores the data about how all the partitions are organized and how to boot the OS throughout the
+                drive. That way if one partition is erased or corrupted, it's still possible to boot and recover some of the data.
+                - Up to 128 partitions
+                - No limit of 2TB per partition
+                - 128bit unique ID
+            !!! - Only one type of partition per storage device, i.e, /dev/sd1 as MBR we cannot have /dev/sd1 as GPT
+            !!! - Always run `partprobe` to update kernel partions table after changing partitions
+
+        [ COMMAND ] fdisk   | Program for creation and manipulation of partition tables
+            fdisk /dev/sda      Access interactive mode to create, delete and change a partition in MBR
+            -l                  Type of installed partition
+        [ COMMAND ] gdisk   | Program for creation and manipulation of partition tables
+            gdisk /dev/sda      Access interactive mode to create, delete and change a partition in GPT
+            -l                  Type of installed partition
+        [ COMMAND ] lsblk   | Lists block devices
+        [ COMMAND ] partprobe
+
+        !!! - For MBR, partition types are Primary and Extended
+
+
+
+    Physical Volumes
+        https://www.redhat.com/sysadmin/create-physical-volume
+        Physical volumes (PV) are the base "block" that you need in order to manipulate a disk using Logical Volume Manager (LVM).
+        Without properly initialized physical volumes, you cannot create Volume Groups or logical volumes.
+        Also, although LVM allows you to create physical volumes using multiple partitions, it is recommended that you use a single partition for a PV.
+
+        - Partition type required   - LVM
+        [ COMMAND ] pvcreate                  - Prepares the physical volume to used with a LVM ( Logical Volume Manager)
+            pvcreate /dev/sdb1
+        [ COMMAND ] pvs or pv display         - List Physical Volumes
+        [ COMMAND ] pvremove                  - Removes a physical volume
+            pvremove /dev/sdb1
+
+        !!! - Be sure that your new drives or partitions are formatted but NOT mounted prior to using the pvcreate command.
+        !!! - LVM allows us to use GPT and MBR together, as long as the type of both is Linux LVM
+
+
+
+    Volume Group
+        https://www.redhat.com/sysadmin/create-volume-group#:~:text=A%20volume%20group%20(%20VG%20)%20is,of%20the%20combined%20physical%20devices.
+        A volume group (VG) is the central unit of the Logical Volume Manager (LVM) architecture. 
+        It is what we create when we combine multiple physical volumes to create a single storage structure, equal to the storage capacity of the combined 
+        physical devices. Physical volumes are devices that are initialized using LVM, i.e., hard disk drives, solid-state drives, partitions, etc.
+
+        [ COMMAND ] vgcreate            - Crate a volume group on top of Physical Volumes
+            vgcreate example_vg /dev/sdb1
+            vgcreate example_vg_2 /dev/sdb2 /dev/sdb3 ... /dev/sdbN
+        [ COMMAND ] vgdisplay or vgs    - List Volumes Groups
+            vgs
+            vgdisplay example_vg
+        [ COMMAND ] vgextend            - Extend a Volume Group
+            vgextend example_vg /dev/sdd1 /dev/sdd2
+
+
+
+    Logical Volume  
+        https://www.redhat.com/sysadmin/creating-logical-volumes
+        Logical Volumes (LV) are the final storage unit in the standard LVM architecture. 
+        These units are created from the volume group, which is made up of physical volumes (PV).
+        [ COMMAND ] lvcreate                                    - Create Logical Volume
+            lvcreate -L 500M -n mylv1 example_vg
+            lvcreate -l 10 -n mylv2 example_vg
+        [ COMMAND ] lvs or lvdisplay                            - List Logical Volumes
+        [ COMMAND ] lvresize -r -l +60 /dev/example_vg/mylv1    - Resize LV and Filesystem
+            r           Resize File System
+            -l          Size in PE ( Physical Extensions )
+            60          Number of PEs to be reduced
+            /dev/...    Logical Volume that will be resized
+        [ COMMAND ] lvresize -r -L -70M /dev/example_vg/mylv1   - Reduce Filesystem and LV  [ !!! Valid Only for ext3 and ext4 ]
+            r           Resize File System
+            -L          Size in MB
+            -70         Size to be Reduced
+            /dev/...    Logical Volume that will be resized
+
+        !!! - xfs Logical Volumes can only be expanded and not reduced
+        !!! - If - or + is not specified, then the value will be set as the total
+            +60 Adds 60 PE
+            -60 removes 60 PE
+             60 will the PEs for the Logical Volume to 60.
+
+
+    Format Partition or Logical Volume  
+        [ COMMAND ] mkstype.fstype [-L label] device            - Format a Partion or Logical Volume
+            mkfs.<tabtab>       Shows available filesystems
+
+
+
+    Define Labels to File Systems [ tune2fs & xfs_admin]
+        ext
+            [ COMMAND ] tune2fs         - Adjust tunable file system parameters on ext2/ext3/ext4 file systems        
+                -L      to define lable to ext file system
+                It is a command-line utility in Unix and Unix-like operating systems that allows users to adjust various parameters and attributes of the ext2, ext3, and ext4 file systems. 
+                Common operations performed with tune2fs include:
+                    - Adjusting filesystem parameters such as maximum mount count, 
+                    - Interval between filesystem checks, 
+                    - Enabling or disabling features such as:
+                        - journaling, 
+                        - resizing the filesystem, 
+                        - setting labels, 
+                        - and more.
+        xfs
+            [ COMMAND ] xfs_admin       - Adjust tunable file system parameters on xfs file systems
+                -L      to define lable to xfs file system
+        
+
+
+    Mount a File System Automatically with UUID or Label [ /etc/fstab ]
+        The file /etc/fstab must be configured:
+            [ FILE ] /etc/fstab - File System Table
+                The /etc/fstab file is a system configuration file found on Unix and Unix-like operating systems. 
+                It stands for "file system table" and is used by the operating system to map out how file systems are to be mounted upon booting and other various system tasks.
+                A File System can be mounted by:
+                    Name    - /dev/sdb2
+                    Label   - mylabel
+                    UUID    - Universally Unique Identifier
+
+
+
+    SWAP Memory
+        Disk Space used when the physical RAM memory is full. Inactives pages are moved from RAM to SWAP.
+        Slower than RAM
+        Server performace indicator
+        [ COMMAND ] mkswap device       - Format SWAP Partition or Logical Volume
+            mkswap <partition>
+        [ COMMAND ] swapon device       - Turn on SWAP
+            swapon <partition>
+        [ COMMAND ] swapoff device      - Turn off SWAP
+            swapoff <partition>
+
+        Add SWAP into New Partitions and Logical Volumes [ 2 NON DESTRUCTIVE METHODs ]
+            1   - mkswap
+                Create a <partion> with SWAP type, mkswap <partion>, swapon <partion>
+                or
+                Create Logical Volume, mkswap <partion>, swapon <partion>
+            2   - Edit /etc/fstab to SWAP be mounted during system initialization  
+
+
+
+    [ COMMAND ] lsblk - lsblk lists information about all available or the specified block devices
+        -f      Output info about filesystems. NAME,FSTYPE,FSVER,LABEL,UUID,FSAVAIL,FSUSE%,MOUNTPOINTS
+        -i      Use ASCII characters for tree formatting    
+
+
+
+    [ COMMAND ] df [options]                    - report file system disk space usage
+        -h       Human readable, Print sizes in powers of 1024 (e.g., 1023M) 
+
+
+
+    [ COMMAND ] mount device directory          - Mount a filesystem to a directory
+
+
+
+    [ COMMAND ] umount device directory         - Umount a filesystem from a directory
+
+
+
+    !!! [ EXAM TIP ] ALWAYS add filesystem to /etc/fstab
+
+
+#### Mount Network File System with NFS
+    NFS 
+        The Network File System (NFS) is a protocol that allows you to set up storage locations on your network. 
+        When you have NFS set up, your users can treat a remote hard drive as if it were attached to their computer,
+        just like they might a USB thumb drive. 
+        Allows to distribute files among computers
+
+        Mount Automatically on initialization
+            /etc/fstab is used to mount remote directories during initialization
+            Read and Write Permissions are necessary to use remote directories
+
+        Mount Manually 
+            [ COMMAND ] showmount -e <remote_server>            - Check available directories
+            [ COMMAND ] mount srv0.temweb.local:/data /mynfs    - Mount /data from Remote Sever on Local Directory mynfs
+        
+        [ !!! EXAM STEP BY STEP !!! ]
+            dnf install -y nfs-utils                - Install nfs-utils to acces showmount command
+
+            showmount -e srv0.temweb.local          - Show directories associated with the NFS Server by address
+            showmount -e <NFS_SERVER_IP>            - Show directories associated with the NFS Server by ip address
+
+            mount srv0.temweb.loca:/dados /mynfs    - Mount remote directory to a local directory manually
+            vi etc/fstab                            - Update /etc/fstab to mount it again during boot
+                srv0.temweb.local:/dados    /mynfs  nfs _netdev 0   0
+            mount -a                                - Refresh informations to make sure there is no error before reboot
+            reboot
+            lsblk
+            
+#### SET-GID - Set Group ID
+    In Linux, the SET-GID (Set Group ID) permission is a special permission that can be applied to executable files and directories. 
+    When the SET-GID permission is set on an executable file, it allows the file to inherit the group ownership of the directory 
+    it resides in, rather than the group ownership of the user who executed the file.
+    When SET-GID is set on a directory, any new files or directories created within that directory inherit the group ownership of the
+    parent directory, instead of the primary group of the user who created the file. This can be useful in scenarios where multiple users 
+    need to collaborate on files and directories while maintaining a common group ownership.
+    [ COMMAND ] chmod g+s <filename or directoryname>       - For files
+    [ COMMAND ] chown                                       - Change ownership
+    [ COMMAND ] groupadd                                    - Create a new group
+    [ COMMAND ] useradd                                     - Create a new user
+
+
+#### Virtual Data Optimization [ no longer in the exam ]
+    https://www.redhat.com/en/blog/introducing-virtual-data-optimizer-reduce-cloud-and-premise-storage-costs
+    Virtual Data Optimizer (VDO) is a device mapper module which adds data reduction capabilities to the Linux block storage stack.
+    VDO uses inline compression and data deduplication techniques to transparently shrink data as it is being written to storage media.
+    VDO combines three techniques :
+        1 - Zero-Block Elimination      - Works by eliminating blocks of data consisting entirely of zeros
+        2 - Data Deduplication          - Eiminates identical copies of blocks of data that have already been stored
+        3 - Data Compression            - Reduces the size of the unique blocks of data stored
+            
+        [ !!! EXAM STEP BY STEP !!! ]
+            dnf install -y vdo kmoed-kvdo                
+            systemctl start vdo     - starts the VDO service immediately
+            systemctl enable vdo    - configures it to start automatically upon system boot         
+            vdo create --name =myvdo --device=/dev/sde --vdoLogicalSize=30G -writePolicy=auto 
+                /dev/sde                has 10 GB
+                vdoLogicalSize=30G      a 30 GB VDO is being created on top of /dev/sde
+                writePolicy=auto        way to write on disk, auto is recommended 
+            mkfs.xfs -K /dev/DISKVDO/myvdo1
+                -K                      Do not attempt to discard blocks at mkfs time.
+            vi etc/fstab                            - Update /etc/fstab to mount it again during boot
+                /dev/DISKVDO/myvdo1 /mnt    xfs defaults, _netdev,x-systemd.requires=vdo.service    0   0
+    
+
+
+
+
+
+
+
